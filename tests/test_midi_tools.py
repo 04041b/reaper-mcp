@@ -269,3 +269,26 @@ def test_create_drum_pattern_empty_pattern_creates_nothing(reaper, call):
 def test_create_drum_pattern_bad_track(reaper, call):
     result = call("create_drum_pattern", track_index=0, pattern="k", start_position=0.0)
     assert result == {"success": False, "error": "list index out of range"}
+
+
+@pytest.mark.parametrize(("arguments", "error"), [
+    ({"pitch": 128}, "pitch must be 0-127; got 128"),
+    ({"pitch": -1}, "pitch must be 0-127; got -1"),
+    ({"velocity": 200}, "velocity must be 0-127; got 200"),
+    ({"channel": 16}, "channel must be 0-15; got 16"),
+    ({"length": 0.0}, "need start >= 0 and length > 0; got start=0.0, length=0.0"),
+])
+def test_add_midi_note_refuses_out_of_range_values(reaper, call, arguments, error):
+    track = reaper.add_track("Keys")
+    track.items.append(ItemState(reaper.new_pointer("MediaItem"), 0.0, 2.0, midi=True))
+    note = {"pitch": 60, "start": 0.0, "length": 1.0, **arguments}
+    result = call("add_midi_note", track_index=0, item_index=0, **note)
+    assert result == {"success": False, "error": error}
+    assert track.items[0].notes == []
+
+
+def test_add_midi_note_item_without_take(reaper, call):
+    track = reaper.add_track("Keys")
+    track.items.append(ItemState(reaper.new_pointer("MediaItem"), 0.0, 2.0, midi=False, has_take=False))
+    result = call("add_midi_note", track_index=0, item_index=0, pitch=60, start=0.0, length=1.0)
+    assert result == {"success": False, "error": "Item is not a MIDI item"}

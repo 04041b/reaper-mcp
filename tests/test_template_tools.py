@@ -188,3 +188,15 @@ def test_resolve_missing_without_a_close_match(tmp_path):
         f"Track template 'Choir' not found in {tmp_path}. "
         "Use list_track_templates to see what is available."
     )
+
+
+def test_resolve_direct_path_must_be_a_template(template_dir, tmp_path, monkeypatch):
+    # Main_openProject would open a project in place of the current one, and a
+    # bare name must not resolve against the server's working directory.
+    project = tmp_path / "Song.rpp"
+    project.write_text("<REAPER_PROJECT\n>\n")
+    with pytest.raises(FileNotFoundError):
+        resolve_template(str(project), template_dir)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "Full Kit").write_text("not a template")
+    assert resolve_template("Full Kit", template_dir).name == "Full Kit.rtracktemplate"

@@ -133,6 +133,9 @@ def list_tracks() -> dict:
 
 def set_track_color(*, track_index: int, r: int, g: int, b: int) -> dict:
     """Set track color using RGB values (0–255 each)."""
+    if not all(0 <= c <= 255 for c in (r, g, b)):
+        # Out of range, one channel would spill into the next in the native color.
+        return {"success": False, "error": f"r, g and b must be 0-255; got {r}, {g}, {b}"}
     project = get_project()
     track = project.tracks[track_index]
     color = RPR.ColorToNative(r, g, b) | 0x1000000

@@ -38,13 +38,23 @@ def test_import_audio_file(reaper, call, tmp_path):
     assert other.items == []
 
 
-def test_import_audio_file_appends_after_existing_items(reaper, call, tmp_path):
+def test_import_audio_file_before_an_existing_item(reaper, call, tmp_path):
+    # REAPER keeps a track's items in position order, so the new item is not
+    # the last one: it must be reported as the item it is.
     wav = tmp_path / "loop.wav"
     wav.write_bytes(b"RIFF")
     track = _audio_item(reaper)
     result = call("import_audio_file", file_path=str(wav), track_index=0)
-    assert (result["item_index"], result["position"]) == (1, 0.0)
-    assert len(track.items) == 2
+    assert (result["item_index"], result["position"], result["length"]) == (0, 0.0, 2.0)
+    assert [i.position for i in track.items] == [0.0, 1.0]
+
+
+def test_import_audio_file_after_an_existing_item(reaper, call, tmp_path):
+    wav = tmp_path / "loop.wav"
+    wav.write_bytes(b"RIFF")
+    _audio_item(reaper)
+    result = call("import_audio_file", file_path=str(wav), track_index=0, position=8.0)
+    assert (result["item_index"], result["position"]) == (1, 8.0)
 
 
 def test_import_audio_file_from_python_defaults_to_the_start(reaper, tmp_path):
@@ -213,3 +223,21 @@ def test_adjust_playback_rate(reaper, call):
 def test_adjust_playback_rate_bad_track(reaper, call):
     result = call("adjust_playback_rate", track_index=0, item_index=0, rate=2.0)
     assert result == {"success": False, "error": "list index out of range"}
+
+
+@pytest.mark.parametrize(("tool", "arguments"), [
+    ("adjust_pitch", {"semitones": 2.0}),
+    ("adjust_playback_rate", {"rate": 2.0}),
+])
+def test_take_tools_refuse_an_item_without_take(reaper, call, tool, arguments):
+    track = reaper.add_track("Audio")
+    track.items.append(ItemState(reaper.new_pointer("MediaItem"), 0.0, 2.0, midi=False, has_take=False))
+    result = call(tool, track_index=0, item_index=0, **arguments)
+    assert result == {"success": False, "error": "item 0 on track 0 has no take"}
+
+
+@pytest.mark.parametrize("rate", [0.0, -1.0])
+def test_adjust_playback_rate_refuses_non_positive_rates(reaper, call, rate):
+    _audio_item(reaper)
+    result = call("adjust_playback_rate", track_index=0, item_index=0, rate=rate)
+    assert result == {"success": False, "error": f"rate must be greater than 0; got {rate}"}

@@ -265,6 +265,7 @@ class FakeReaper:
         for state in self.tracks:
             if state.selected:
                 state.items.append(ItemState(self.new_pointer("MediaItem"), self.cursor, 2.0, False))
+                state.items.sort(key=lambda item: item.position)  # REAPER's order
         return 1
 
     def TrackFX_SetParamNormalized(self, track: str, fx: int, param: int, value: float) -> bool:
