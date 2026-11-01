@@ -219,3 +219,11 @@ def test_get_track_info_with_an_empty_item(reaper, call):
     state.items.append(ItemState("(MediaItem*)0x1", 0.0, 2.0, midi=False, has_take=False))
     [item] = call("get_track_info", track_index=0)["items"]
     assert item == {"index": 0, "position": 0.0, "length": 2.0, "name": ""}
+
+
+@pytest.mark.parametrize("rgb", [(256, 0, 0), (0, -1, 0), (0, 0, 300)])
+def test_set_track_color_refuses_channels_outside_0_255(reaper, call, rgb):
+    state = reaper.add_track("a")
+    result = call("set_track_color", track_index=0, r=rgb[0], g=rgb[1], b=rgb[2])
+    assert result == {"success": False, "error": f"r, g and b must be 0-255; got {', '.join(map(str, rgb))}"}
+    assert "I_CUSTOMCOLOR" not in state.info

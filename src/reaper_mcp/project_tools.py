@@ -30,7 +30,11 @@ def save_project(*, project_path: str = "") -> dict:
     """Save the current project. If no path is given, saves to ~/Documents/REAPER Projects."""
     project = get_project()
     if not project_path:
-        proj_name = project.name or f"Project {time.strftime('%Y-%m-%d %H-%M-%S')}"
+        # REAPER's project name is the file name, extension included ("Song.RPP").
+        proj_name = project.name
+        if proj_name.lower().endswith(".rpp"):
+            proj_name = proj_name[:-4]
+        proj_name = proj_name or f"Project {time.strftime('%Y-%m-%d %H-%M-%S')}"
         default_dir = Path.home() / "Documents" / "REAPER Projects"
         os.makedirs(default_dir, exist_ok=True)
         project_path = str(default_dir / f"{proj_name}.rpp")

@@ -12,19 +12,22 @@ def import_audio_file(*, file_path: str, track_index: int, position: float = 0.0
         return {"success": False, "error": f"File not found: {file_path}"}
     project = get_project()
     track = project.tracks[track_index]
+    before = {item.id for item in track.items}
     # Select only this track, set cursor, then insert media at cursor
     RPR.SetOnlyTrackSelected(track.id)
     project.cursor_position = position
     RPR.InsertMedia(file_path, 0)
-    # Retrieve the item that was just created (last item on the track)
-    track_refreshed = project.tracks[track_index]
-    if track_refreshed.n_items == 0:
+    # A track's items are in position order, so the new one is found by id,
+    # not taken to be the last.
+    new = [(i, item) for i, item in enumerate(project.tracks[track_index].items)
+           if item.id not in before]
+    if not new:
         return {"success": False, "error": "Insert succeeded but no item found on track"}
-    item = track_refreshed.items[track_refreshed.n_items - 1]
+    item_index, item = new[0]
     return {
         "success": True,
         "track_index": track_index,
-        "item_index": track_refreshed.n_items - 1,
+        "item_index": item_index,
         "position": item.position,
         "length": item.length,
         "file_path": file_path,
@@ -110,12 +113,18 @@ def _trim_start(item, seconds: float) -> None:
         take.set_info_value("D_STARTOFFS", offset + seconds * take.get_info_value("D_PLAYRATE"))
 
 
+def _take(track_index: int, item_index: int):
+    """The item's active take. reapy's active_take is a truthy null take for an
+    item without one, which REAPER would silently ignore."""
+    item = get_project().tracks[track_index].items[item_index]
+    if not item.n_takes:
+        raise ValueError(f"item {item_index} on track {track_index} has no take")
+    return item.active_take
+
+
 def adjust_pitch(*, track_index: int, item_index: int, semitones: float) -> dict:
     """Adjust the pitch of an audio item by semitones (can be fractional)."""
-    project = get_project()
-    track = project.tracks[track_index]
-    item = track.items[item_index]
-    take = item.active_take
+    take = _take(track_index, item_index)
     take.set_info_value("D_PITCH", semitones)  # reapy's Take has no pitch property
     return {
         "success": True,
@@ -126,10 +135,9 @@ def adjust_pitch(*, track_index: int, item_index: int, semitones: float) -> dict
 
 def adjust_playback_rate(*, track_index: int, item_index: int, rate: float) -> dict:
     """Adjust playback rate of an audio item. 1.0 = normal speed, 0.5 = half speed."""
-    project = get_project()
-    track = project.tracks[track_index]
-    item = track.items[item_index]
-    take = item.active_take
+    if rate <= 0:
+        return {"success": False, "error": f"rate must be greater than 0; got {rate}"}
+    take = _take(track_index, item_index)
     take.set_info_value("D_PLAYRATE", rate)  # reapy's Take has no playback_rate property
     return {
         "success": True,

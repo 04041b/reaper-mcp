@@ -10,6 +10,11 @@ How REAPER takes render settings (verified on REAPER 7.82):
 - RENDER_BOUNDSFLAG: 1 = entire project, 2 = time selection (0 is custom
   start/end positions).
 
+The render settings are the user's own project settings, so every render here
+puts back the ones it changed: otherwise an analysis tool would leave the
+project's render target pointing at a deleted temp file, and the next render
+(from REAPER or render_regions) would inherit this module's format.
+
 Rendering never reaches a REAPER dialog: with nothing to render REAPER shows
 a modal "Nothing to render!", and with an existing target an overwrite
 prompt, and either blocks the call until someone clicks. So an empty source
@@ -33,6 +38,9 @@ TIME_SELECTION = 2
 FORMAT_TYPES = {"wav": b"evaw", "flac": b"calf", "mp3": b"l3pm", "ogg": b"vggo"}
 WAV_BIT_DEPTHS = (16, 24, 32)  # 32 renders as float
 SOLO_IN_PLACE = 2
+
+RENDER_STRINGS = ("RENDER_FILE", "RENDER_PATTERN", "RENDER_FORMAT")
+RENDER_NUMBERS = ("RENDER_SRATE", "RENDER_CHANNELS", "RENDER_BOUNDSFLAG", "RENDER_ADDTOPROJ")
 
 
 def get_project_string(key: str) -> str:
@@ -70,10 +78,24 @@ def _target(output_path: str, format: str) -> Path:
 
 def _render(target: Path, *, format: str, sample_rate: int, bit_depth: int,
             channels: int, bounds: int) -> None:
-    """Configure REAPER's render settings and render to target."""
+    """Render to target with these settings, then put the project's own back."""
     config = _format_config(format, bit_depth)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.unlink(missing_ok=True)  # an existing file raises REAPER's overwrite prompt
+    strings = {key: get_project_string(key) for key in RENDER_STRINGS}
+    numbers = {key: RPR.GetSetProjectInfo(0, key, 0.0, False) for key in RENDER_NUMBERS}
+    try:
+        _configure_and_render(target, config, sample_rate=sample_rate, channels=channels,
+                              bounds=bounds)
+    finally:
+        for key, value in strings.items():
+            set_project_string(key, value)
+        for key, number in numbers.items():
+            RPR.GetSetProjectInfo(0, key, number, True)
+
+
+def _configure_and_render(target: Path, config: str, *, sample_rate: int, channels: int,
+                          bounds: int) -> None:
     set_project_string("RENDER_FILE", str(target.parent))
     set_project_string("RENDER_PATTERN", target.stem)
     set_project_string("RENDER_FORMAT", config)
@@ -180,7 +202,13 @@ def render_stems(
     directory = Path(output_directory).expanduser().resolve()
     project = get_project()
     _require_content(project)
-    indices = track_indices if track_indices is not None else list(range(project.n_tracks))
+    n_tracks = project.n_tracks
+    indices = track_indices if track_indices is not None else list(range(n_tracks))
+    # A negative index would solo nothing (no track's position equals it) and
+    # render the whole mix as that "stem".
+    bad = [i for i in indices if not 0 <= i < n_tracks]
+    if bad:
+        raise IndexError(f"track indices {bad} out of range; the project has {n_tracks} tracks")
     tracks = project.tracks
     names = _stem_names([tracks[i].name or f"Track_{i}" for i in indices])
     solos = [track.get_info_value("I_SOLO") for track in tracks]
@@ -197,13 +225,24 @@ def render_stems(
 
 
 def _stem_names(track_names: list[str]) -> list[str]:
-    """File-safe, unique names: a second "Kick" becomes "Kick_2"."""
-    seen: dict[str, int] = {}
+    """File-safe, unique names: a second "Kick" becomes "Kick_2".
+
+    Uniqueness is case-insensitive (macOS and Windows file systems are), and a
+    numbered name never takes one a track already has, since each render
+    deletes its target first and would delete an earlier stem.
+    """
+    safe_names = ["".join(c if c.isalnum() or c in " _-" else "_" for c in raw)
+                  for raw in track_names]
+    taken = {name.lower() for name in safe_names}
+    used: set[str] = set()
     names = []
-    for raw in track_names:
-        safe = "".join(c if c.isalnum() or c in " _-" else "_" for c in raw)
-        seen[safe] = seen.get(safe, 0) + 1
-        names.append(safe if seen[safe] == 1 else f"{safe}_{seen[safe]}")
+    for safe in safe_names:
+        name, n = safe, 1
+        while name.lower() in used or (n > 1 and name.lower() in taken):
+            n += 1
+            name = f"{safe}_{n}"
+        used.add(name.lower())
+        names.append(name)
     return names
 
 

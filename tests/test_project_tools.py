@@ -201,3 +201,12 @@ def test_set_time_signature_leaves_a_marker_half_a_second_in(reaper, call):
     reaper.tempo_markers = [[0.5, 140.0, 4, 4]]
     call("set_time_signature", numerator=7, denominator=8)
     assert reaper.tempo_markers == [[0.0, 120.0, 7, 8], [0.5, 140.0, 4, 4]]
+
+
+def test_save_project_default_path_does_not_double_the_extension(reaper, call, monkeypatch):
+    # REAPER's project name is its file name, extension included.
+    monkeypatch.setenv("HOME", str(reaper.tmp))
+    reaper.project_name = "Song.RPP"
+    result = call("save_project")
+    expected = reaper.tmp / "Documents" / "REAPER Projects" / "Song.rpp"
+    assert result == {"success": True, "project_path": str(expected)}

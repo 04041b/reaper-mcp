@@ -83,11 +83,18 @@ def add_midi_note(
     start/length: seconds, relative to the item's start.
     channel: MIDI channel 0–15 (use 9 for drums).
     """
+    for label, value, top in (("pitch", pitch, 127), ("velocity", velocity, 127),
+                              ("channel", channel, 15)):
+        if not 0 <= value <= top:
+            return {"success": False, "error": f"{label} must be 0-{top}; got {value}"}
+    if start < 0 or length <= 0:
+        return {"success": False,
+                "error": f"need start >= 0 and length > 0; got start={start}, length={length}"}
     project = get_project()
     track = project.tracks[track_index]
     item = track.items[item_index]
     take = item.active_take
-    if not take.is_midi:
+    if not item.n_takes or not take.is_midi:
         return {"success": False, "error": "Item is not a MIDI item"}
     take.add_note(
         start=start,

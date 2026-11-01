@@ -17,8 +17,18 @@ def add_plugin(track, fx_name: str):
         return None
 
 
+def check_index(kind: str, index: int) -> None:
+    """Refuse a negative index. reapy's FX and parameter lists accept one
+    (counting from the end), but the ReaScript call it is passed on to does
+    not, so the check would pass and REAPER would change nothing."""
+    if index < 0:
+        raise IndexError(f"{kind} must be 0 or more; got {index}")
+
+
 def set_param_normalized(track, fx_index: int, param_index: int, *, value: float):
     """Set a parameter's normalized value; returns the parameter as REAPER now has it."""
+    check_index("fx_index", fx_index)
+    check_index("param_index", param_index)
     track.fxs[fx_index].params[param_index]  # raises IndexError for a bad index first
     RPR.TrackFX_SetParamNormalized(track.id, fx_index, param_index, value)
     return track.fxs[fx_index].params[param_index]
@@ -46,9 +56,11 @@ def add_fx(*, track_index: int, fx_name: str) -> dict:
 
 def remove_fx(*, track_index: int, fx_index: int) -> dict:
     """Remove an FX plugin from a track by its index."""
+    check_index("fx_index", fx_index)
     track = get_project().tracks[track_index]
     fx_name = track.fxs[fx_index].name
-    RPR.TrackFX_Delete(track.id, fx_index)
+    if not RPR.TrackFX_Delete(track.id, fx_index):
+        return {"success": False, "error": f"REAPER did not remove FX {fx_index} ({fx_name})"}
     return {"success": True, "track_index": track_index, "removed": fx_name}
 
 
@@ -120,6 +132,7 @@ def bypass_fx(*, track_index: int, fx_index: int, bypassed: bool) -> dict:
 
 def load_fx_preset(*, track_index: int, fx_index: int, preset_name: str) -> dict:
     """Load a saved preset by name for an FX plugin."""
+    check_index("fx_index", fx_index)
     track = get_project().tracks[track_index]
     fx = track.fxs[fx_index]
     if not RPR.TrackFX_SetPreset(track.id, fx_index, preset_name):

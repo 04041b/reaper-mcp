@@ -1,5 +1,7 @@
 """Characterization tests for fx_tools, run end to end against the fake REAPER."""
 
+import pytest
+
 from tests.fake_reaper.objects import FXState
 
 
@@ -198,3 +200,18 @@ def test_load_fx_preset_bad_fx(reaper, call):
     reaper.add_track("Bus")
     result = call("load_fx_preset", track_index=0, fx_index=0, preset_name="Vocal Air")
     assert result == {"success": False, "error": "list index out of range"}
+
+
+@pytest.mark.parametrize(("tool", "arguments"), [
+    ("remove_fx", {"fx_index": -1}),
+    ("load_fx_preset", {"fx_index": -1, "preset_name": "Bright"}),
+    ("set_fx_parameter", {"fx_index": -1, "param_index": 0, "value": 0.1}),
+    ("set_fx_parameter", {"fx_index": 0, "param_index": -1, "value": 0.1}),
+])
+def test_negative_fx_and_param_indices_are_refused(reaper, call, tool, arguments):
+    # reapy's lists accept -1 (the last one), but REAPER's own call does not.
+    track = _fx_track(reaper)
+    before = [(f.plugin, list(f.values), f.preset) for f in track.fxs]
+    result = call(tool, track_index=0, **arguments)
+    assert result["success"] is False and "must be 0 or more" in result["error"]
+    assert [(f.plugin, list(f.values), f.preset) for f in track.fxs] == before

@@ -108,8 +108,12 @@ def resolve_template(name: str, template_dir: Path) -> Path:
 
     Raises FileNotFoundError or ValueError (ambiguous) with a helpful message.
     """
+    # Only a template file is opened directly: Main_openProject would also
+    # open a project (.rpp) in place of the current one, or insert any media
+    # file, and a bare relative name must not resolve against the server's
+    # working directory ahead of the TrackTemplates folder.
     direct = Path(name).expanduser()
-    if direct.is_file():
+    if direct.suffix.lower() == TEMPLATE_SUFFIX and direct.is_file():
         return direct
 
     key = name.replace("\\", "/").strip().strip("/")
