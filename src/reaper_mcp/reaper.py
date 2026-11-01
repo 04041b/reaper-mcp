@@ -12,6 +12,9 @@ from typing import Protocol, cast
 
 import reapy
 from reapy import reascript_api as _reascript_api
+from reapy.tools.network import machines as _machines
+
+from reaper_mcp import reaper_bridge
 
 logger = logging.getLogger("reaper_mcp.reaper")
 
@@ -140,17 +143,28 @@ def ensure_connected() -> None:
     if _connected:
         return
     try:
-        reapy.connect()
+        _connect()
         _connected = True
         logger.info("Connected to REAPER")
     except Exception as e:
         raise RuntimeError(
             f"Cannot connect to REAPER: {e}. "
-            "Make sure REAPER is running and the distant API is enabled. "
-            "To enable it: run the setup script (scripts/enable_reapy.py) or "
-            "in REAPER go to Actions > Run ReaScript, then run: "
-            "import reapy; reapy.config.enable_dist_api()"
+            "Make sure REAPER is running. If it has not been set up for reaper-mcp: "
+            "close REAPER, run `reaper-mcp-server --setup-reaper`, then start REAPER."
         ) from e
+
+
+def _connect() -> None:
+    """Connect reapy through the bridge (reaper_bridge), never reapy's own
+    distant API, which listens on the network without authentication."""
+    try:
+        config = reaper_bridge.load_config()
+    except FileNotFoundError as e:
+        raise RuntimeError(f"{reaper_bridge.CONFIG} does not exist") from e
+    client = reaper_bridge.BridgeClient(int(config["port"]), bytes.fromhex(config["token"]))
+    # reapy.connect selects a registered client and rebuilds reascript_api on it.
+    _machines.CLIENTS["localhost"] = client
+    reapy.connect("localhost")
 
 
 def get_project() -> reapy.Project:

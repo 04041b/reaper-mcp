@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server that enables AI agents to control REAPER D
 
 - [REAPER](https://www.reaper.fm/) 7 or later, installed and running
 - Python 3.10+
-- REAPER's distant API enabled (see [Setup](#setting-up-reaper))
+- REAPER set up with `reaper-mcp-server --setup-reaper` (see [Setup](#setting-up-reaper))
 
 ## Installation
 
@@ -24,16 +24,28 @@ pip install -e .
 
 ## Setting Up REAPER
 
-The server communicates with REAPER via [python-reapy](https://github.com/RomeoDespres/reapy), which requires REAPER's distant API to be enabled.
+The server drives REAPER through [python-reapy](https://github.com/RomeoDespres/reapy)'s
+object model, over a small bridge that runs inside REAPER. The bridge listens on
+`127.0.0.1` only and serves only clients that prove a per-user token kept in
+`~/.reaper-mcp/bridge.json`.
 
-1. Open REAPER
-2. Go to Actions > Run ReaScript
-3. Select `scripts/enable_reapy.py` from this repo (or create a new script with the contents below)
-   ```python
-   import reapy
-   reapy.config.enable_dist_api()
+1. Close REAPER (it rewrites `reaper.ini` when it quits)
+2. Run, from the environment the server is installed in:
+   ```bash
+   reaper-mcp-server --setup-reaper
    ```
-4. Restart REAPER
+   For a portable REAPER install, add `--resource-path <folder>`, the folder REAPER
+   shows under Options > Show REAPER resource path.
+3. Start REAPER. The bridge starts with it, from `Scripts/__startup.lua`.
+
+Run it again if you recreate the environment: REAPER runs the bridge from there.
+
+> **Do not use reapy's own distant API** (`reapy.config.enable_dist_api()` or
+> `reapy.configure_reaper()`), which earlier versions of this README asked for. It
+> listens on every network interface (port 2306) without authentication and runs
+> any function a request names, and adds a web interface on port 2307 with no
+> password: anyone who can reach your machine can run code as you. `--setup-reaper`
+> removes both if they are set up.
 
 ## Usage
 

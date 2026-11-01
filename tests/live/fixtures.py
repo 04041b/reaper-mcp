@@ -12,6 +12,7 @@ import sys
 import pytest
 import reapy
 
+from reaper_mcp import reaper
 from tests.live.rpr import RPR
 from tests.live.watchdog import Watchdog, guard_reapy
 
@@ -20,12 +21,11 @@ RESET_BPM = 120.0
 
 def _connect() -> reapy.Project:
     try:
-        reapy.connect()
-        return reapy.Project()
+        return reaper.get_project()
     except Exception as e:  # reapy raises several unrelated types here
         pytest.fail(
-            f"--live was given but REAPER is not reachable through reapy: {e}. Start REAPER "
-            "with the reapy server enabled (see CONTRIBUTING.md, 'Live tests')."
+            f"--live was given but REAPER is not reachable through the bridge: {e}. Start REAPER "
+            "set up with `reaper-mcp-server --setup-reaper` (see CONTRIBUTING.md, 'Live tests')."
         )
 
 

@@ -76,19 +76,20 @@ uv run ruff check src tests
   each test, so run them on a scratch project. If REAPER opens a dialog, the
   run stops and names it instead of hanging.
 
-## Live tests: connecting reapy to REAPER
+## Live tests: connecting to REAPER
 
 With REAPER **closed** (it rewrites `reaper.ini` when it quits), run once:
 
 ```bash
-uv run python -c "import reapy; reapy.configure_reaper()"
+uv run reaper-mcp-server --setup-reaper
 ```
 
-then start REAPER. This enables Python for ReaScript, adds a web interface on
-port 2307 and registers reapy's server action. The action points into the
-environment you ran it from, so run it again if you recreate that
-environment. (`scripts/enable_reapy.py`, run from inside REAPER, does the same
-from the other side.)
+then start REAPER. This enables Python for ReaScript and has REAPER start the
+bridge (`src/reaper_mcp/reaper_bridge.py`) from `Scripts/__startup.lua`; the
+live tests connect through it, as the server does. The bridge runs from the
+environment you set it up from, so run it again if you recreate that
+environment. Do not use reapy's `configure_reaper` or `enable_dist_api`: they
+expose REAPER to the network without authentication (see README).
 
 ## Style
 
