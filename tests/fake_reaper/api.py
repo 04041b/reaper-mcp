@@ -45,6 +45,8 @@ class FakeReaper:
     saved_paths: list[str] = field(default_factory=list)
     commands: list[int] = field(default_factory=list)
     renders: list[Path] = field(default_factory=list)
+    # The render settings in force at each render, in render order.
+    render_settings: list[dict[str, float | str]] = field(default_factory=list)
     # Projects moved behind a new tab: (tracks, markers, regions, tempo markers).
     background_tabs: list[tuple] = field(default_factory=list)
     # Names of the soloed tracks at each render, in render order.
@@ -88,6 +90,7 @@ class FakeReaper:
     def Main_OnCommand(self, command: int, flag: int) -> None:
         self.commands.append(command)
         if command == RENDER_PROJECT:
+            self.render_settings.append(dict(self.project_info))
             self.renders.extend(render(self))
             self.render_solos.append([t.name for t in self.tracks if t.info["I_SOLO"]])
         elif command == NEW_PROJECT_TAB:

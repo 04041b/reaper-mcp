@@ -16,7 +16,7 @@ from reaper_mcp.render_tools import (
     render_time_selection,
     render_to_temp_file,
 )
-from tests.helpers import RENDER, WAV_24
+from tests.helpers import RENDER, UNSET_RENDER_SETTINGS, WAV_24
 
 
 def fmt(raw: bytes) -> str:
@@ -30,10 +30,11 @@ def test_render_project_settings(reaper, call, tmp_path):
         "success": True, "output_path": str(out), "file_size_bytes": out.stat().st_size,
         "format": "wav", "sample_rate": 44100, "bit_depth": 16, "channels": 1,
     }
-    assert reaper.project_info == {
+    assert reaper.project_info == UNSET_RENDER_SETTINGS
+    assert reaper.render_settings == [{
         "RENDER_FILE": str(tmp_path), "RENDER_PATTERN": "mix", "RENDER_FORMAT": fmt(b"evaw\x10\x00\x01"),
         "RENDER_SRATE": 44100.0, "RENDER_CHANNELS": 1.0, "RENDER_BOUNDSFLAG": 1.0, "RENDER_ADDTOPROJ": 0.0,
-    }
+    }]
     info = sf.info(str(out))
     assert (info.samplerate, info.channels, info.subtype) == (44100, 1, "PCM_16")
 
@@ -49,7 +50,7 @@ def test_render_project_wav_bit_depths(reaper, call, tmp_path, bit_depth, subtyp
 def test_render_project_other_formats_use_reaper_defaults(reaper, call, tmp_path, format, tag):
     result = call("render_project", output_path=str(tmp_path / "mix"), format=format, bit_depth=99)
     assert result["output_path"] == str(tmp_path / f"mix.{format}")
-    assert reaper.project_info["RENDER_FORMAT"] == fmt(tag)
+    assert reaper.render_settings[-1]["RENDER_FORMAT"] == fmt(tag)
 
 
 def test_render_project_refusals_send_nothing_to_reaper(reaper, call, tmp_path):
@@ -104,7 +105,7 @@ def test_render_time_selection(reaper, call, tmp_path):
         "success": True, "output_path": str(out), "file_size_bytes": out.stat().st_size,
         "start": 0.5, "end": 1.5, "format": "wav",
     }
-    assert reaper.project_info["RENDER_BOUNDSFLAG"] == 2.0
+    assert reaper.render_settings[-1]["RENDER_BOUNDSFLAG"] == 2.0
     assert sf.info(str(out)).duration == pytest.approx(1.0)
     assert reaper.time_selection == (0.1, 0.2)
 
@@ -139,11 +140,41 @@ def test_render_stems_subset_duplicates_and_format(reaper, call, tmp_path):
     assert [s["track_index"] for s in result["stems"]] == [2, 0]
 
 
-def test_render_stems_bad_index_renders_nothing(reaper, call, tmp_path):
+@pytest.mark.parametrize("bad", [5, -1])
+def test_render_stems_bad_index_renders_nothing(reaper, call, tmp_path, bad):
+    # -1 would otherwise solo no track and render the whole mix as a "stem".
     reaper.add_track("Kick")
-    result = call("render_stems", output_directory=str(tmp_path), track_indices=[0, 5])
-    assert result == {"success": False, "error": "list index out of range"}
+    result = call("render_stems", output_directory=str(tmp_path), track_indices=[0, bad])
+    assert result == {
+        "success": False,
+        "error": f"track indices [{bad}] out of range; the project has 1 tracks",
+    }
     assert reaper.commands == []
+
+
+def test_render_stems_numbered_names_never_take_a_track_name(reaper, call, tmp_path):
+    # Each render deletes its target first, so a clash would delete a stem.
+    for name in ("Kick", "Kick", "Kick_2", "kick"):
+        reaper.add_track(name)
+    result = call("render_stems", output_directory=str(tmp_path))
+    paths = [Path(s["output_path"]).name for s in result["stems"]]
+    assert paths == ["Kick.wav", "Kick_3.wav", "Kick_2.wav", "kick_4.wav"]
+    assert all(s["exists"] for s in result["stems"])
+
+
+def test_renders_put_the_project_render_settings_back(reaper, call, tmp_path):
+    own = {
+        "RENDER_FILE": "/music/bounces", "RENDER_PATTERN": "$project", "RENDER_FORMAT": "Y2FsZg==",
+        "RENDER_SRATE": 96000.0, "RENDER_CHANNELS": 1.0, "RENDER_BOUNDSFLAG": 3.0,
+        "RENDER_ADDTOPROJ": 1.0,
+    }
+    reaper.project_info.update(own)
+    reaper.add_track("Kick")
+    assert call("render_project", output_path=str(tmp_path / "mix.wav"))["success"] is True
+    assert call("render_stems", output_directory=str(tmp_path / "stems"))["success"] is True
+    assert call("analyze_loudness")["success"] is True
+    assert len(reaper.render_settings) == 3
+    assert reaper.project_info == own
 
 
 def test_render_stems_empty_project_is_refused(reaper, call, tmp_path):
@@ -169,7 +200,7 @@ DEFAULT_SETTINGS = {"RENDER_FORMAT": WAV_24, "RENDER_SRATE": 48000.0, "RENDER_CH
 
 
 def _settings(reaper) -> dict:
-    return {key: reaper.project_info[key] for key in DEFAULT_SETTINGS}
+    return {key: reaper.render_settings[-1][key] for key in DEFAULT_SETTINGS}
 
 
 def test_render_project_python_defaults(reaper, tmp_path):
@@ -217,9 +248,11 @@ def test_render_stems_reply_and_settings(reaper, call, tmp_path):
         ],
     }
     # Stems are always stereo, over the whole project.
-    assert reaper.project_info["RENDER_CHANNELS"] == 2.0
-    assert reaper.project_info["RENDER_BOUNDSFLAG"] == 1.0
-    assert reaper.project_info["RENDER_FORMAT"] == fmt(b"evaw\x10\x00\x01")
+    for settings in reaper.render_settings:
+        assert settings["RENDER_CHANNELS"] == 2.0
+        assert settings["RENDER_BOUNDSFLAG"] == 1.0
+        assert settings["RENDER_FORMAT"] == fmt(b"evaw\x10\x00\x01")
+    assert reaper.project_info == UNSET_RENDER_SETTINGS
 
 
 def test_render_stems_unsupported_format_renders_nothing(reaper, call, tmp_path):
